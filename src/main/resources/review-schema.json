@@ -1,0 +1,71 @@
+{
+  "type": "object",
+  "properties": {
+    "summary": {
+      "type": "string"
+    },
+    "dimensions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "充分",
+              "部分",
+              "待加强",
+              "未观察"
+            ]
+          },
+          "evidence": {
+            "type": "string"
+          },
+          "advice": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "level",
+          "evidence",
+          "advice"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "strengths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "improvedAnswer": {
+      "type": "string"
+    },
+    "practice": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "summary",
+    "dimensions",
+    "strengths",
+    "gaps",
+    "improvedAnswer",
+    "practice"
+  ],
+  "additionalProperties": false
+}

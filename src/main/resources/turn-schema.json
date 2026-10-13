@@ -1,0 +1,50 @@
+{
+  "type": "object",
+  "properties": {
+    "question": {
+      "type": "string"
+    },
+    "focus": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "opening",
+        "followup",
+        "new_topic"
+      ]
+    },
+    "feedback": {
+      "type": "object",
+      "properties": {
+        "evidence": {
+          "type": "string"
+        },
+        "strength": {
+          "type": "string"
+        },
+        "gap": {
+          "type": "string"
+        },
+        "nextStep": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "evidence",
+        "strength",
+        "gap",
+        "nextStep"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "question",
+    "focus",
+    "kind",
+    "feedback"
+  ],
+  "additionalProperties": false
+}

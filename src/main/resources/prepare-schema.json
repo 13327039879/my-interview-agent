@@ -1,0 +1,43 @@
+{
+  "type": "object",
+  "properties": {
+    "summary": {
+      "type": "string"
+    },
+    "topics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "preparation": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "reason",
+          "preparation"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "missing": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "summary",
+    "topics",
+    "missing"
+  ],
+  "additionalProperties": false
+}

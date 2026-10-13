@@ -1,0 +1,5 @@
+target
+.git
+.env
+*.zip
+.DS_Store

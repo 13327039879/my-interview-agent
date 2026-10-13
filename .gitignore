@@ -1,0 +1,10 @@
+target/
+.env
+.env.*
+!.env.example
+.idea/
+*.iml
+.DS_Store
+*.jar
+*.zip
+登录信息.txt
