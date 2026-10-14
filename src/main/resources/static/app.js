@@ -19,11 +19,11 @@ function navigate(next) { if (busy) return toast('正在处理，请稍等。');
 document.querySelectorAll('[data-nav]').forEach(b => b.addEventListener('click', () => navigate(b.dataset.nav)));
 function lock(value) { busy = value; document.querySelectorAll('button').forEach(b => b.disabled = value); if (!value && page === 'setup') updateAIButtons(); if (!value && page === 'interview' && $('#finish')) $('#finish').disabled = !state.current?.history.some(h => h.role === 'candidate'); }
 function updateAIButtons() { for (const id of ['start','prepare']) if ($('#'+id)) $('#'+id).disabled = !configured || busy; }
-async function api(action, config, history = []) {
+async function api(action, config, history = [], workflow) {
   const csrfResponse = await fetch('/api/csrf');
   if (!csrfResponse.ok) throw new Error('无法获取登录状态，请刷新页面。');
   const csrf = await csrfResponse.json();
-  const response = await fetch('/api/agent', { method:'POST', headers:{'Content-Type':'application/json',[csrf.headerName]:csrf.token}, body:JSON.stringify({action,config,history}), signal:AbortSignal.timeout(75000) });
+  const response = await fetch('/api/agent', { method:'POST', headers:{'Content-Type':'application/json',[csrf.headerName]:csrf.token}, body:JSON.stringify({action,config,history,workflow}), signal:AbortSignal.timeout(75000) });
   if (response.status === 401) throw new Error('登录已过期，输入已保留；请刷新页面重新登录。');
   const data = await response.json(); if (!response.ok) throw new Error(data.error || '请求失败，请重试。'); return data.result;
 }
@@ -65,27 +65,40 @@ const demoQuestions = {
   en: ['Tell me about a project that best demonstrates your personal contribution.','Which key decision in that project did you personally make?','Why did you choose that approach?','What evidence showed that the project met its goal?','What would you change first if you did it again?','Tell me about a disagreement you resolved with a stakeholder.','What specific action did you take in that disagreement?','What was the most important lesson you learned?']
 };
 function demoTurn(s) { const n=s.history.filter(h=>h.role==='candidate').length; return {question:demoQuestions[s.config.language][n%8],focus:s.config.language==='en'?'Example question':'示例问题',kind:n?'followup':'opening',feedback:{evidence:'',strength:'',gap:'',nextStep:''}}; }
+function workflowOf(s) { return {plan:s.plan,turns:s.turns.map(t=>({dimensionId:t.dimensionId,question:t.question,kind:t.kind})),analyses:s.analyses}; }
+const aspectLabels={context:'背景与目标',action:'个人行动',decision:'决策取舍',result:'结果依据'};
+function renderPlan(s) {
+  if(s.version!==2)return '';
+  return `<section class="interview-plan"><h3>本场考察计划</h3><p>${esc(s.plan.summary)}</p><ol>${s.plan.dimensions.map(d=>{
+    const answered=s.analyses.some(a=>a.dimensionId===d.id),current=!s.done&&s.turns.at(-1)?.dimensionId===d.id;
+    return `<li><b>${esc(d.title)}</b> <span class="badge">${current?'进行中':answered?'已回答':'待考察'}</span><p>${esc(d.goal)}</p></li>`;
+  }).join('')}</ol><p class="muted">最多 ${s.config.rounds} 轮，每个主题最多连续追问 2 次。完成计划后可能提前结束。</p></section>`;
+}
+function renderEvidence(a) {
+  if(!a)return '';
+  return `<details class="feedback evidence-ledger"><summary>第 ${a.answerIndex} 轮 · 回答证据 ${a.evidence.length}/4</summary>${a.evidence.length?a.evidence.map(e=>`<p><b>${esc(aspectLabels[e.aspect])}</b><br>「${esc(e.quote)}」</p>`).join(''):'<p>尚未提取到具体证据，暂不评价表现。</p>'}<p><b>待补充：</b>${a.missing.length?a.missing.map(x=>esc(aspectLabels[x])).join('、'):'四类证据均已涉及。'}</p><p>仅表示回答的信息覆盖程度，不是能力评分。</p></details>`;
+}
 async function startSession(demo) {
   if(busy) return;
   if(state.current && !confirm('已有一场未结束的练习。开始新面试会替换它，是否继续？')) return;
   const config={...state.config,role:state.config.role.trim()||(demo?'体验岗位':'')};
   const next={id:crypto.randomUUID(),config,demo,history:[],turns:[],startedAt:new Date().toISOString(),draft:''};
   lock(true);
-  try { const turn=demo?demoTurn(next):await api('turn',config,[]); next.history.push({role:'interviewer',text:turn.question});next.turns.push(turn);state.current=next;save();page='interview';render();window.scrollTo(0,0); }
+  try { const planned=demo?null:await api('plan',config,[]); const turn=demo?demoTurn(next):planned.turn; if(planned){next.version=2;next.plan=planned.plan;next.analyses=[];next.done=false;} next.history.push({role:'interviewer',text:turn.question});next.turns.push(turn);state.current=next;save();page='interview';render();window.scrollTo(0,0); }
   catch(e) { $('#setup-error').hidden=false;$('#setup-error').textContent=errorText(e); }
   finally{lock(false);}
 }
 function renderInterview() {
   const s=state.current;
   if(!s) { $('#main').innerHTML=heading('ONE QUESTION AT A TIME','留一点时间，练习表达。','每次只回答一个问题，让思路更清晰。')+'<div class="panel empty"><span>◌</span><h2>还没有进行中的面试</h2><p>先选定岗位、素材和练习方式。</p><button id="go-setup" class="button primary">准备一场面试 →</button></div>';$('#go-setup').onclick=()=>navigate('setup');return; }
-  const answered=s.history.filter(h=>h.role==='candidate').length, lastTurn=s.turns.at(-1), ended=answered>=s.config.rounds;
+  const answered=s.history.filter(h=>h.role==='candidate').length, lastTurn=s.turns.at(-1), ended=!!s.done||answered>=s.config.rounds;
   $('#main').innerHTML=heading('A SPACE TO FIND YOUR WORDS',esc(s.config.role),'不必追求完美答案。先把真实的经历讲清楚。')+
     (s.demo?'<div class="notice">流程演示：以下为固定示例问题，不调用 AI，不会根据回答追问或评价能力。真实 AI 模式需要配置模型。</div>':'')+
     `<div class="interview-grid"><section class="panel"><div class="chat" id="chat" role="log" aria-label="面试对话">${s.history.map((h,i)=>{
       const t=h.role==='interviewer'?s.turns[Math.floor(i/2)]:null;
-      return `${t?.feedback?.evidence?`<div class="feedback"><b>上一轮 · 教练反馈</b><p>你的原话：${esc(t.feedback.evidence)}</p><p>亮点：${esc(t.feedback.strength)}</p><p>待改进：${esc(t.feedback.gap)}</p><p>下次试试：${esc(t.feedback.nextStep)}</p></div>`:''}<article class="message ${h.role==='candidate'?'user':'assistant'}"><div class="meta">${h.role==='candidate'?'你的回答':`${s.demo?'示例面试官':'面试官'} · ${esc(t?.focus||'')}`}</div><p>${esc(h.text)}</p></article>`;
-    }).join('')}</div><form id="answer-form" class="composer"><label for="answer">${ended?'本轮问答已完成':'你的回答'}</label><textarea id="answer" maxlength="6000" rows="4" ${ended?'disabled':''} placeholder="从背景、你的行动、结果开始讲述…">${esc(s.draft)}</textarea><div class="composer-bottom"><span id="answer-hint">${ended?'点击生成复盘，查看本次练习记录。':'Ctrl / ⌘ + Enter 提交 · '+(s.draft?.length||0)+' / 6,000'}</span><button id="submit-answer" class="button primary" type="${ended?'button':'submit'}">${ended?'生成复盘 ↗':'提交回答 →'}</button></div><div id="interview-error" class="error" role="alert" hidden></div></form></section>
-    <aside class="panel content-panel session-info"><div class="eyebrow">SESSION IN PROGRESS</div><div class="question-number">${answered}<small> / ${s.config.rounds} 轮已回答</small></div><div class="progress-track"><div class="progress-fill" id="progress"></div></div><h3>${esc(lastTurn?.focus||'练习进度')}</h3><dl><dt>练习方式</dt><dd>${s.config.style==='coach'?'逐题教练':'连续追问'}</dd><dt>面试语言</dt><dd>${s.config.language==='zh'?'中文':'English'}</dd><dt>目标岗位</dt><dd>${esc(s.config.role)}</dd></dl><p>${s.config.style==='coach'?'每次回答后给出反馈，并根据需要继续追问。最后一轮反馈包含在复盘中。':'过程中保持面试节奏，不展示提示或评价。结束后统一复盘。'}</p><button id="finish" class="button secondary" ${answered?'':'disabled'}>提前结束并复盘</button><p>记录自动保存在当前浏览器。刷新页面可继续练习。</p></aside></div>`;
+      return `${s.version!==2&&t?.feedback?.evidence?`<div class="feedback"><b>上一轮 · 教练反馈</b><p>你的原话：${esc(t.feedback.evidence)}</p><p>亮点：${esc(t.feedback.strength)}</p><p>待改进：${esc(t.feedback.gap)}</p><p>下次试试：${esc(t.feedback.nextStep)}</p></div>`:''}<article class="message ${h.role==='candidate'?'user':'assistant'}"><div class="meta">${h.role==='candidate'?'你的回答':`${s.demo?'示例面试官':'面试官'} · ${esc(t?.focus||'')}`}</div><p>${esc(h.text)}</p></article>${h.role==='candidate'&&s.version===2&&s.config.style==='coach'?renderEvidence(s.analyses[Math.floor(i/2)]):''}`;
+    }).join('')}</div><form id="answer-form" class="composer"><label for="answer">${ended?(s.done&&answered<s.config.rounds?'考察计划已完成':'本轮问答已完成'):'你的回答'}</label><textarea id="answer" maxlength="6000" rows="4" ${ended?'disabled':''} placeholder="从背景、你的行动、结果开始讲述…">${esc(s.draft)}</textarea><div class="composer-bottom"><span id="answer-hint">${ended?'点击生成复盘，查看本次练习记录。':'Ctrl / ⌘ + Enter 提交 · '+(s.draft?.length||0)+' / 6,000'}</span><button id="submit-answer" class="button primary" type="${ended?'button':'submit'}">${ended?'生成复盘 ↗':'提交回答 →'}</button></div><div id="interview-error" class="error" role="alert" hidden></div></form></section>
+    <aside class="panel content-panel session-info"><div class="eyebrow">${ended?'SESSION COMPLETE':'SESSION IN PROGRESS'}</div><div class="question-number">${answered}<small> / ${s.config.rounds} 轮已回答</small></div><div class="progress-track"><div class="progress-fill" id="progress"></div></div><h3>${esc(lastTurn?.focus||'练习进度')}</h3>${renderPlan(s)}<dl><dt>练习方式</dt><dd>${s.config.style==='coach'?'逐题教练':'连续追问'}</dd><dt>面试语言</dt><dd>${s.config.language==='zh'?'中文':'English'}</dd><dt>目标岗位</dt><dd>${esc(s.config.role)}</dd></dl><p>${s.config.style==='coach'?'每次回答后记录原话证据与缺口，并根据需要继续追问。展开回答下方的证据记录即可查看。':'过程中保持面试节奏，不展示提示或评价。结束后统一复盘。'}</p><button id="finish" class="button secondary" ${answered?'':'disabled'}>${ended?'生成复盘':'提前结束并复盘'}</button><p>记录自动保存在当前浏览器。刷新页面可继续练习。</p></aside></div>`;
   $('#progress').style.width=`${Math.min(100,answered/s.config.rounds*100)}%`;
   $('#answer').addEventListener('input',()=>{s.draft=$('#answer').value;$('#answer-hint').textContent=`Ctrl / ⌘ + Enter 提交 · ${s.draft.length} / 6,000`;save();});
   $('#answer-form').onsubmit=submitAnswer;
@@ -96,11 +109,12 @@ function renderInterview() {
 }
 async function submitAnswer(event) {
   event.preventDefault();if(busy)return;
-  const s=state.current,text=$('#answer').value.trim();if(!text)return toast('先写下你的回答，再继续。');
+  const s=state.current,text=$('#answer').value.trim();if(s.done||s.history.filter(h=>h.role==='candidate').length>=s.config.rounds)return;if(!text)return toast('先写下你的回答，再继续。');
   const history=[...s.history,{role:'candidate',text}];const count=history.filter(h=>h.role==='candidate').length;
   lock(true);$('#interview-error').hidden=true;$('#submit-answer').textContent='正在处理…';$('#answer').disabled=true;
   try {
-    if(count<s.config.rounds){ const turn=s.demo?demoTurn({...s,history}):await api('turn',s.config,history);s.history=[...history,{role:'interviewer',text:turn.question}];s.turns.push(turn); }
+    if(s.version===2){ const result=await api('step',s.config,history,workflowOf(s)); s.history=history;s.analyses.push(result.analysis);s.done=result.done;s.endReason=result.reason;if(result.turn){s.history.push({role:'interviewer',text:result.turn.question});s.turns.push(result.turn);} }
+    else if(count<s.config.rounds){ const turn=s.demo?demoTurn({...s,history}):await api('turn',s.config,history);s.history=[...history,{role:'interviewer',text:turn.question}];s.turns.push(turn); }
     else s.history=history;
     s.draft='';save();renderInterview();
   } catch(e) { $('#interview-error').hidden=false;$('#interview-error').textContent=errorText(e);$('#submit-answer').textContent='重试提交 →';$('#answer').disabled=false; }
@@ -113,18 +127,18 @@ async function finishSession() {
   if(busy)return;const s=state.current;if(!s.history.some(h=>h.role==='candidate'))return toast('至少回答一个问题再复盘。');
   if(s.draft?.trim()&&!confirm('当前输入框里还有未提交的回答。复盘只分析已提交内容，是否继续？'))return;
   lock(true);$('#interview-error').hidden=true;$('#finish').textContent='正在整理复盘…';
-  try { const report=s.demo?demoReview(s):await api('review',s.config,s.history);const record={...s,report,finishedAt:new Date().toISOString()};state.records.unshift(record);state.current=null;save();page='report';renderReport(record); }
+  try { const report=s.demo?demoReview(s):await api(s.version===2?'review_v2':'review',s.config,s.history,s.version===2?workflowOf(s):undefined);const record={...s,report,finishedAt:new Date().toISOString()};state.records.unshift(record);state.current=null;save();page='report';renderReport(record); }
   catch(e){$('#interview-error').hidden=false;$('#interview-error').textContent=errorText(e);$('#finish').textContent='重试生成复盘';}
   finally{lock(false);}
 }
 const items = list => list.length?`<ul>${list.map(t=>`<li>${esc(t)}</li>`).join('')}</ul>`:'<p>本次没有可据此作出的评价。</p>';
 function renderReport(s) {
   page='report';shell();const r=s.report;
-  $('#main').innerHTML=`<section class="heading"><div><div class="eyebrow">REFLECT. REFINE. REPEAT.</div><h1>每一次练习，都有下一步。</h1><p>${esc(s.config.role)} · ${s.history.filter(h=>h.role==='candidate').length} 轮回答 · ${s.demo?'流程演示':'AI 面试复盘'}</p></div><div class="report-toolbar"><button class="button secondary" id="export">导出复盘 ↓</button><button class="button primary" id="again">再练一次 ↗</button></div></section>${s.demo?'<div class="notice">演示记录，不包含 AI 分析或能力评分。</div>':''}<div class="panel content-panel"><div class="eyebrow">SESSION REFLECTION</div><p class="report-summary">${esc(r.summary)}</p><span class="muted">仅反映本次练习中可观察到的表现，不代表真实招聘结论。</span></div><div class="report-grid"><section class="panel wide"><h3>能力维度与回答证据</h3>${r.dimensions.map(d=>`<div class="dimension"><div class="dimension-head"><b>${esc(d.name)}</b><span class="badge">${esc(d.level)}</span></div><p class="quote">${esc(d.evidence)}</p><p>${esc(d.advice)}</p></div>`).join('')}</section><section class="panel"><h3>值得保留的表达</h3>${items(r.strengths)}</section><section class="panel"><h3>下一次重点改进</h3>${items(r.gaps)}</section><section class="panel wide"><h3>把一段回答讲得更清楚</h3><p>${esc(r.improvedAnswer)}</p></section><section class="panel wide"><h3>下一次练习清单</h3><ol>${r.practice.map(p=>`<li>${esc(p)}</li>`).join('')}</ol></section><section class="panel wide"><details><summary>查看完整对话 · ${s.history.length} 条</summary>${s.history.map(h=>`<p><b>${h.role==='candidate'?'你':'面试官'}</b><br>${esc(h.text)}</p>`).join('')}</details></section></div>`;
+  $('#main').innerHTML=`<section class="heading"><div><div class="eyebrow">REFLECT. REFINE. REPEAT.</div><h1>每一次练习，都有下一步。</h1><p>${esc(s.config.role)} · ${s.history.filter(h=>h.role==='candidate').length} 轮回答 · ${s.demo?'流程演示':'AI 面试复盘'}</p></div><div class="report-toolbar"><button class="button secondary" id="export">导出复盘 ↓</button><button class="button primary" id="again">再练一次 ↗</button></div></section>${s.demo?'<div class="notice">演示记录，不包含 AI 分析或能力评分。</div>':''}<div class="panel content-panel"><div class="eyebrow">SESSION REFLECTION</div><p class="report-summary">${esc(r.summary)}</p><span class="muted">${esc(r.evidenceNote||'仅反映本次练习中可观察到的表现，不代表真实招聘结论。')}</span></div><div class="report-grid"><section class="panel wide"><h3>考察维度与回答证据</h3>${r.dimensions.map(d=>`<div class="dimension"><div class="dimension-head"><b>${esc(d.name)}</b><span class="badge">${esc(d.level)}</span></div><p class="quote">${esc(d.evidence)}</p><p>${esc(d.advice)}</p></div>`).join('')}</section><section class="panel"><h3>值得保留的表达</h3>${items(r.strengths)}</section><section class="panel"><h3>下一次重点改进</h3>${items(r.gaps)}</section><section class="panel wide"><h3>把一段回答讲得更清楚</h3><p>${esc(r.improvedAnswer)}</p></section><section class="panel wide"><h3>下一次练习清单</h3><ol>${r.practice.map(p=>`<li>${esc(p)}</li>`).join('')}</ol></section><section class="panel wide"><details><summary>查看完整对话 · ${s.history.length} 条</summary>${s.history.map(h=>`<p><b>${h.role==='candidate'?'你':'面试官'}</b><br>${esc(h.text)}</p>`).join('')}</details></section></div>`;
   $('#export').onclick=()=>downloadRecord(s);$('#again').onclick=()=>{state.config={...s.config};save();navigate('setup');};window.scrollTo(0,0);
 }
 function downloadRecord(s) {
-  const r=s.report;const text=`# ${s.config.role} · 面试练习复盘\n\n时间：${s.finishedAt}\n模式：${s.demo?'流程演示（未调用 AI）':'AI 面试'}\n\n${r.summary}\n\n## 能力维度\n\n${r.dimensions.map(d=>`### ${d.name} · ${d.level}\n\n证据：${d.evidence}\n\n建议：${d.advice}`).join('\n\n')}\n\n## 亮点\n${r.strengths.map(x=>'- '+x).join('\n')}\n\n## 改进点\n${r.gaps.map(x=>'- '+x).join('\n')}\n\n## 回答改写\n\n${r.improvedAnswer}\n\n## 下一步\n${r.practice.map(x=>'- '+x).join('\n')}\n\n## 对话记录\n\n${s.history.map(h=>`**${h.role==='candidate'?'你':'面试官'}**\n\n${h.text}`).join('\n\n')}\n`;
+  const r=s.report;const text=`# ${s.config.role} · 面试练习复盘\n\n时间：${s.finishedAt}\n模式：${s.demo?'流程演示（未调用 AI）':'AI 面试'}\n\n${r.summary}\n\n${r.evidenceNote||''}\n\n## 考察维度\n\n${r.dimensions.map(d=>`### ${d.name} · ${d.level}\n\n证据：${d.evidence}\n\n建议：${d.advice}`).join('\n\n')}\n\n## 亮点\n${r.strengths.map(x=>'- '+x).join('\n')}\n\n## 改进点\n${r.gaps.map(x=>'- '+x).join('\n')}\n\n## 回答改写\n\n${r.improvedAnswer}\n\n## 下一步\n${r.practice.map(x=>'- '+x).join('\n')}\n\n## 对话记录\n\n${s.history.map(h=>`**${h.role==='candidate'?'你':'面试官'}**\n\n${h.text}`).join('\n\n')}\n`;
   const url=URL.createObjectURL(new Blob([text],{type:'text/markdown;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=`面试复盘_${s.finishedAt.slice(0,10)}_${s.id.slice(0,6)}.md`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 function renderHistory() {

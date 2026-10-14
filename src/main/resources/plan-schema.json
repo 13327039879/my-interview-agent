@@ -1,0 +1,40 @@
+{
+  "type": "object",
+  "properties": {
+    "summary": {
+      "type": "string"
+    },
+    "dimensions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "goal": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "goal",
+          "question"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "summary",
+    "dimensions"
+  ],
+  "additionalProperties": false
+}

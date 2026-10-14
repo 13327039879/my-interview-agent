@@ -81,7 +81,7 @@ class AgentTest {
             AgentService agent=new AgentService(json,contracts,new MockEnvironment()
                 .withProperty("OPENAI_BASE_URL",base).withProperty("AI_API_MODE","chat")
                 .withProperty("OPENAI_MODEL","deepseek-flash"));
-            for (String action : new String[]{"prepare","turn","review"}) {
+            for (String action : new String[]{"prepare","turn","review","plan","assess","reflect"}) {
                 var in=input(); in.put("action",action);
                 JsonNode payload=agent.requestPayload(in);
                 assertEquals("json_object",payload.at("/response_format/type").asText());

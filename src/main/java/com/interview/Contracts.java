@@ -15,7 +15,7 @@ class Contracts {
     final Map<String, String> prompts = new HashMap<>();
     Contracts(ObjectMapper json) throws IOException {
         this.json = json;
-        for (String action : List.of("prepare", "turn", "review")) {
+        for (String action : List.of("prepare", "turn", "review", "plan", "assess", "reflect")) {
             try (var stream = new ClassPathResource(action + "-schema.json").getInputStream()) { schemas.put(action, json.readTree(stream)); }
             try (var stream = new ClassPathResource(action + "-prompt.txt").getInputStream()) { prompts.put(action, new String(stream.readAllBytes(), StandardCharsets.UTF_8)); }
         }

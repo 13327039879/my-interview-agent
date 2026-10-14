@@ -1,0 +1,37 @@
+[
+  {
+    "name": "模糊的团队贡献不能作为个人行动或结果",
+    "answer": "我们做了很多优化，效果很好。",
+    "evidence": [],
+    "expectedEvidence": 0
+  },
+  {
+    "name": "完整经历保留四类逐字证据",
+    "answer": "目标是减少报警。我添加了去重规则。考虑到延迟，选择批量处理而不是逐条发送。上线后一周报警从每天100条降到20条。",
+    "evidence": [
+      {"aspect": "context", "quote": "目标是减少报警"},
+      {"aspect": "action", "quote": "我添加了去重规则"},
+      {"aspect": "decision", "quote": "考虑到延迟，选择批量处理而不是逐条发送"},
+      {"aspect": "result", "quote": "上线后一周报警从每天100条降到20条"}
+    ],
+    "expectedEvidence": 4
+  },
+  {
+    "name": "模型编造的数字被丢弃",
+    "answer": "我添加了去重规则，但还没有统计结果。",
+    "evidence": [
+      {"aspect": "action", "quote": "我添加了去重规则"},
+      {"aspect": "result", "quote": "报警减少80%"}
+    ],
+    "expectedEvidence": 1
+  },
+  {
+    "name": "拼接引用与来自其他轮次的引用不能通过",
+    "answer": "先讨论了方案，然后我安排了测试，最后团队上线了。",
+    "evidence": [
+      {"aspect": "action", "quote": "我安排了测试，最后上线了"},
+      {"aspect": "result", "quote": "上一轮的项目成功了"}
+    ],
+    "expectedEvidence": 0
+  }
+]

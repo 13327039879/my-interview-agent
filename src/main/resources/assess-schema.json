@@ -1,0 +1,38 @@
+{
+  "type": "object",
+  "properties": {
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "aspect": {
+            "type": "string",
+            "enum": [
+              "context",
+              "action",
+              "decision",
+              "result"
+            ]
+          },
+          "quote": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "aspect",
+          "quote"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "followupQuestion": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "evidence",
+    "followupQuestion"
+  ],
+  "additionalProperties": false
+}
